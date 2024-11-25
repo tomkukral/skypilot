@@ -1,8 +1,10 @@
 """Common data structures for provisioning"""
+
 import abc
 import dataclasses
 import functools
 import os
+import time
 from typing import Any, Dict, List, Optional, Tuple
 
 from sky import sky_logging
@@ -16,14 +18,15 @@ from sky.utils import resources_utils
 # -------------------- input data model -------------------- #
 
 InstanceId = str
-_START_TITLE = '\n' + '-' * 20 + 'Start: {} ' + '-' * 20
-_END_TITLE = '-' * 20 + 'End:   {} ' + '-' * 20 + '\n'
+_START_TITLE = "\n" + "-" * 20 + "Start: {}" + "-" * 20
+_END_TITLE = "-" * 20 + "End:   {}, took {} " + "-" * 20 + "\n"
 
 logger = sky_logging.init_logger(__name__)
 
 
 class ProvisionerError(RuntimeError):
     """Exception for provisioner."""
+
     errors: List[Dict[str, str]]
 
 
@@ -38,6 +41,7 @@ class StopFailoverError(Exception):
 @dataclasses.dataclass
 class ProvisionConfig:
     """Configuration for provisioning."""
+
     # Global configurations for the cloud provider.
     provider_config: Dict[str, Any]
     # Configurations for the authentication.
@@ -62,6 +66,7 @@ class ProvisionConfig:
 @dataclasses.dataclass
 class ProvisionRecord:
     """Record for a provisioning process."""
+
     # The name of the cloud provider.
     provider_name: str
     # The name of the region.
@@ -84,13 +89,16 @@ class ProvisionRecord:
 
         Is an instance just booted,  so that there are no services running?
         """
-        return (instance_id in self.resumed_instance_ids or
-                instance_id in self.created_instance_ids)
+        return (
+            instance_id in self.resumed_instance_ids
+            or instance_id in self.created_instance_ids
+        )
 
 
 @dataclasses.dataclass
 class InstanceInfo:
     """Instance information."""
+
     instance_id: InstanceId
     internal_ip: str
     external_ip: Optional[str]
@@ -108,6 +116,7 @@ class InstanceInfo:
 @dataclasses.dataclass
 class ClusterInfo:
     """Cluster Information."""
+
     instances: Dict[InstanceId, List[InstanceInfo]]
     # The unique identifier of the head instance, i.e., the
     # `instance_info.instance_id` of the head node.
@@ -131,8 +140,10 @@ class ClusterInfo:
         if self.head_instance_id is None:
             return None
         if self.head_instance_id not in self.instances:
-            raise ValueError('Head instance ID not in the cluster metadata. '
-                             f'ClusterInfo: {self.__dict__}')
+            raise ValueError(
+                "Head instance ID not in the cluster metadata. "
+                f"ClusterInfo: {self.__dict__}"
+            )
         return self.instances[self.head_instance_id][0]
 
     def get_worker_instances(self) -> List[InstanceInfo]:
@@ -156,8 +167,7 @@ class ClusterInfo:
         if head_instance is None:
             head_instance_ip = []
         else:
-            head_instance_ip = [(head_instance.internal_ip,
-                                 head_instance.external_ip)]
+            head_instance_ip = [(head_instance.internal_ip, head_instance.external_ip)]
         other_ips = []
         for instance in self.get_worker_instances():
             pair = (instance.internal_ip, instance.external_ip)
@@ -168,13 +178,12 @@ class ClusterInfo:
         """Return the instance ids in the same order of ip_tuples."""
         id_list = []
         if self.head_instance_id is not None:
-            id_list.append(self.head_instance_id + '-0')
+            id_list.append(self.head_instance_id + "-0")
         for inst_id, instances in self.instances.items():
             start_idx = 0
             if inst_id == self.head_instance_id:
                 start_idx = 1
-            id_list.extend(
-                [f'{inst_id}-{i}' for i in range(start_idx, len(instances))])
+            id_list.extend([f"{inst_id}-{i}" for i in range(start_idx, len(instances))])
         return id_list
 
     def has_external_ips(self) -> bool:
@@ -195,25 +204,25 @@ class ClusterInfo:
             for pair in ip_tuples:
                 internal_ip = pair[0]
                 if internal_ip is None:
-                    raise ValueError('Not all instances have private IPs')
+                    raise ValueError("Not all instances have private IPs")
                 ip_list.append(internal_ip)
         else:
             for pair in ip_tuples:
                 public_ip = pair[1]
                 if public_ip is None:
-                    raise ValueError('Not all instances have public IPs')
+                    raise ValueError("Not all instances have public IPs")
                 ip_list.append(public_ip)
         return ip_list
 
     def get_feasible_ips(self, force_internal_ips: bool = False) -> List[str]:
         """Get internal or external IPs depends on the settings."""
         if self.provider_config is not None:
-            use_internal_ips = self.provider_config.get('use_internal_ips',
-                                                        False)
+            use_internal_ips = self.provider_config.get("use_internal_ips", False)
         else:
             use_internal_ips = False
-        return self._get_ips(use_internal_ips or not self.has_external_ips() or
-                             force_internal_ips)
+        return self._get_ips(
+            use_internal_ips or not self.has_external_ips() or force_internal_ips
+        )
 
     def get_ssh_ports(self) -> List[int]:
         """Get the SSH port of all the instances."""
@@ -224,14 +233,13 @@ class ClusterInfo:
             head_instance_port = [head_instance.ssh_port]
 
         worker_instances = self.get_worker_instances()
-        worker_instance_ports = [
-            instance.ssh_port for instance in worker_instances
-        ]
+        worker_instance_ports = [instance.ssh_port for instance in worker_instances]
         return head_instance_port + worker_instance_ports
 
 
 class Endpoint:
     """Base class for endpoints."""
+
     pass
 
     @abc.abstractmethod
@@ -242,8 +250,9 @@ class Endpoint:
 @dataclasses.dataclass
 class SocketEndpoint(Endpoint):
     """Socket endpoint accesible via a host and a port."""
+
     port: Optional[int]
-    host: str = ''
+    host: str = ""
 
     def url(self, override_ip: Optional[str] = None) -> str:
         host = override_ip if override_ip else self.host
@@ -253,21 +262,23 @@ class SocketEndpoint(Endpoint):
 @dataclasses.dataclass
 class HTTPEndpoint(SocketEndpoint):
     """HTTP endpoint accessible via a url."""
-    path: str = ''
+
+    path: str = ""
 
     def url(self, override_ip: Optional[str] = None) -> str:
         host = override_ip if override_ip else self.host
-        return f'http://{os.path.join(super().url(host), self.path)}'
+        return f"http://{os.path.join(super().url(host), self.path)}"
 
 
 @dataclasses.dataclass
 class HTTPSEndpoint(SocketEndpoint):
     """HTTPS endpoint accessible via a url."""
-    path: str = ''
+
+    path: str = ""
 
     def url(self, override_ip: Optional[str] = None) -> str:
         host = override_ip if override_ip else self.host
-        return f'https://{os.path.join(super().url(host), self.path)}'
+        return f"https://{os.path.join(super().url(host), self.path)}"
 
 
 def query_ports_passthrough(
@@ -286,13 +297,13 @@ def query_ports_passthrough(
 
 
 def log_function_start_end(func):
-
     @functools.wraps(func)
     def wrapper(*args, **kwargs):
+        start = time.time()
         logger.info(_START_TITLE.format(func.__name__))
         try:
             return func(*args, **kwargs)
         finally:
-            logger.info(_END_TITLE.format(func.__name__))
+            logger.info(_END_TITLE.format(func.__name__, time.time() - start))
 
     return wrapper
