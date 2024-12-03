@@ -261,7 +261,7 @@ CONTROLLER_IDLE_MINUTES_TO_AUTOSTOP = 10
 # managed jobs.
 # Serve: A default controller with 4 vCPU and 16 GB memory can run up to 16
 # services.
-CONTROLLER_PROCESS_CPU_DEMAND = 0.25
+CONTROLLER_PROCESS_CPU_DEMAND = 0.10
 
 # SkyPilot environment variables
 SKYPILOT_NUM_NODES = 'SKYPILOT_NUM_NODES'
